@@ -154,25 +154,53 @@ def clamp_color(val):
 # ----------------------------
 # Animation update function
 # ----------------------------
+def handle_pre_spikes():
+    while pre_spikes.size() > update.last_pre_count:
+        console.print(f"[bold cyan][t={h.t:.1f}ms] ⚡ Pre-synaptic Spike detected![/bold cyan]")
+        os.system('afplay /System/Library/Sounds/Tink.aiff &')
+        t_pre = pre_spikes[update.last_pre_count]
+        for t_post in post_spikes:
+            dt = t_post - t_pre
+            if dt <= 0:
+                old_w = nc.weight[0]
+                nc.weight[0] += A_minus * np.exp(dt / tau_stdp)
+                console.print(f"    [bold red]-> LTD: Weight weakened ({old_w:.5f} -> {nc.weight[0]:.5f})[/bold red]")
+        update.last_pre_count += 1
+
+def handle_post_spikes():
+    while post_spikes.size() > update.last_post_count:
+        console.print(f"[bold yellow][t={h.t:.1f}ms] ⚡ Post-synaptic Spike detected![/bold yellow]")
+        os.system('afplay /System/Library/Sounds/Tink.aiff &')
+        t_post = post_spikes[update.last_post_count]
+        for t_pre in pre_spikes:
+            dt = t_post - t_pre
+            if dt > 0:
+                old_w = nc.weight[0]
+                nc.weight[0] += A_plus * np.exp(-dt / tau_stdp)
+                console.print(f"    [bold green]-> LTP: Weight strengthened ({old_w:.5f} -> {nc.weight[0]:.5f})[/bold green]")
+        update.last_post_count += 1
+
+def get_voltage_colors(sim_frame):
+    pre_color = (0, clamp_color((v_pre[sim_frame]+70)/100), 1)
+    post_color = (1, clamp_color(0.5 + (v_post[sim_frame]+70)/100), 0)
+    return pre_color, post_color
+
 def update(frame):
-    # --- Title Screen Logic ---
-    title_duration = 100  # frames (approx 3-4 seconds)
-    
+    title_duration = 100
+
     if frame < title_duration:
         title_text.set_text("STDP LEARNING LAB\n\n"
                             "Watch the synapse (purple) strengthen\n"
                             "as neurons fire together.\n\n"
                             "Pre-synaptic: Blue  |  Post-synaptic: Orange")
-        # Rotate camera gently during title
         try:
             ax.view_init(elev=20, azim=45 + frame * 0.2)
         except AttributeError:
             pass
         return pre_line, post_line, syn_line, weight_text, weight_line_2d, title_text, phase_line
 
-    # --- Simulation Logic ---
-    title_text.set_text("")  # Hide title
-    sim_frame = frame - title_duration  # Adjust frame count for simulation
+    title_text.set_text("")
+    sim_frame = frame - title_duration
 
     if sim_frame == 0:
         h.finitialize(-65)
@@ -185,45 +213,14 @@ def update(frame):
         phase_dv_data.clear()
         console.print("[bold magenta]--> Starting animation loop (Reset)...[/bold magenta]")
 
-    # Advance simulation by multiple steps to speed up animation
     for _ in range(steps_per_frame):
         h.fadvance()
 
-    # --- Online STDP Implementation ---
-    # Check for new Pre spikes (LTD check: Post fired before Pre)
-    while pre_spikes.size() > update.last_pre_count:
-        console.print(f"[bold cyan][t={h.t:.1f}ms] ⚡ Pre-synaptic Spike detected![/bold cyan]")
-        os.system('afplay /System/Library/Sounds/Tink.aiff &') # Mac sound effect
-        t_pre = pre_spikes[update.last_pre_count]
-        for t_post in post_spikes:
-            dt = t_post - t_pre
-            if dt <= 0: 
-                old_w = nc.weight[0]
-                nc.weight[0] += A_minus * np.exp(dt / tau_stdp)
-                console.print(f"    [bold red]-> LTD: Weight weakened ({old_w:.5f} -> {nc.weight[0]:.5f})[/bold red]")
-        update.last_pre_count += 1
+    handle_pre_spikes()
+    handle_post_spikes()
 
-    # Check for new Post spikes (LTP check: Pre fired before Post)
-    while post_spikes.size() > update.last_post_count:
-        console.print(f"[bold yellow][t={h.t:.1f}ms] ⚡ Post-synaptic Spike detected![/bold yellow]")
-        os.system('afplay /System/Library/Sounds/Tink.aiff &') # Mac sound effect
-        t_post = post_spikes[update.last_post_count]
-        for t_pre in pre_spikes:
-            dt = t_post - t_pre
-            if dt > 0:
-                old_w = nc.weight[0]
-                nc.weight[0] += A_plus * np.exp(-dt / tau_stdp)
-                console.print(f"    [bold green]-> LTP: Weight strengthened ({old_w:.5f} -> {nc.weight[0]:.5f})[/bold green]")
-        update.last_post_count += 1
-    # ----------------------------------
+    pre_color, post_color = get_voltage_colors(sim_frame)
 
-    # Voltage coloring
-    # Pre-neuron: Blue (low V) to Cyan (high V)
-    pre_color = (0, clamp_color((v_pre[sim_frame]+70)/100), 1)
-    # Post-neuron: Orange (low V) to Yellow (high V)
-    post_color = (1, clamp_color(0.5 + (v_post[sim_frame]+70)/100), 0)
-
-    # Update pre neuron
     xs, ys, zs = [h.x3d(i, sec=pre) for i in range(int(h.n3d(sec=pre)))], \
                  [h.y3d(i, sec=pre) for i in range(int(h.n3d(sec=pre)))], \
                  [h.z3d(i, sec=pre) for i in range(int(h.n3d(sec=pre)))]
@@ -231,7 +228,6 @@ def update(frame):
     pre_line.set_3d_properties(zs)
     pre_line.set_color(pre_color)
 
-    # Update post neuron
     xs, ys, zs = [h.x3d(i, sec=post) for i in range(int(h.n3d(sec=post)))], \
                  [h.y3d(i, sec=post) for i in range(int(h.n3d(sec=post)))], \
                  [h.z3d(i, sec=post) for i in range(int(h.n3d(sec=post)))]
@@ -239,31 +235,25 @@ def update(frame):
     post_line.set_3d_properties(zs)
     post_line.set_color(post_color)
 
-    # Synapse connects end of pre to start of post
     syn_x = [h.x3d(int(h.n3d(sec=pre))-1, sec=pre), h.x3d(0, sec=post)]
     syn_y = [h.y3d(int(h.n3d(sec=pre))-1, sec=pre), h.y3d(0, sec=post)]
     syn_z = [h.z3d(int(h.n3d(sec=pre))-1, sec=pre), h.z3d(0, sec=post)]
     syn_line.set_data(syn_x, syn_y)
     syn_line.set_3d_properties(syn_z)
-    syn_line.set_markersize(10 + nc.weight[0]*200)  # synapse grows as weight increases
+    syn_line.set_markersize(10 + nc.weight[0]*200)
 
-    # Rotate the camera (azim changes with frame count)
     try:
         ax.view_init(elev=20, azim=45 + frame * 0.5)
     except AttributeError:
         pass
 
-    # Update 2D graph
     time_data.append(h.t)
     weight_data.append(nc.weight[0])
     weight_line_2d.set_data(time_data, weight_data)
 
     weight_text.set_text(f"Synaptic Weight: {nc.weight[0]:.5f}")
 
-    # Update Phase Plane (Calculus!)
-    # Calculate derivative: (Current V - Previous V) / dt
     if len(v_pre) > 1:
-        # Get the last few points to draw a trail
         current_v = v_pre[-1]
         prev_v = v_pre[-2]
         dv_dt = (current_v - prev_v) / h.dt
