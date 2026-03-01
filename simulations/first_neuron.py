@@ -95,6 +95,6 @@ while True:
         else:
             try:
                 currents[i] = float(ans)
-            except:
+            except Exception:
                 print("Invalid input, keeping previous value.")
     run_simulation()

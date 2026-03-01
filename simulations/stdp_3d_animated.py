@@ -9,7 +9,7 @@ import matplotlib
 # Force TkAgg backend to prevent Mac crashes and timer issues
 try:
     matplotlib.use('TkAgg')
-except:
+except Exception:
     pass
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
